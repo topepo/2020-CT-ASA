@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+  <head>
+    <title>What Inferential Statistics Can Utilize from Predictive Models</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Max Kuhn    RStudio PBC   max@rstudio.com   @topepos" />
+    <script src="libs/header-attrs-2.1/header-attrs.js"></script>
+    <script src="libs/kePrint-0.0.1/kePrint.js"></script>
+    <link rel="stylesheet" href="mtheme_max.css" type="text/css" />
+    <link rel="stylesheet" href="fonts_mtheme_max.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# What Inferential Statistics Can Utilize from Predictive Models
+### Max Kuhn <br><br> RStudio PBC <br> <a href="mailto:max@rstudio.com" class="email">max@rstudio.com</a> <br> <span class="citation">@topepos</span>
+
+---
+
+
+
+
+
+# Goals for different types of models
+
+.font120[
+**Inferential models** are meant to produce explainable parameters of interested that can be quantified and compared statistically. The end goal is to make conclusions. 
+
+**Predictive models** are created to produce predictions on new samples that are as close as possible to the actual values. Explainability is nice but secondary; the end goal is to estimate something accurately.  
+]
+
+The latter also goes by titles such as machine learning, AI, or pattern recognition.
+
+---
+
+# What we care about
+
+.pull-left[
+Inferential Models:
+
+.font80[
+
+* Dogmatic regarding probabilistic distributions.
+
+* Bias towards explainable models (i.e., low-complexity).
+
+  * Tend to be high bias/low variance models.
+
+* Focus on likelihood-based statistics.
+
+* Elimination of non-significant model terms. 
+
+* Many different sub-models if the same type considered. 
+
+* Uncertainty estimates
+
+]
+
+]
+.pull-right[
+Predictive Models:
+
+.font80[
+
+* Distribution ignorant (typically).
+
+* Pro-complexity.
+
+   * Variance and bias levels vary; stereotypically high variance/low bias. 
+
+* Focus on accuracy-oriented metrics or business metrics (e.g., expected monetary loss).
+
+* Feature selection and engineering are important. 
+
+* Many different types of models considered. 
+
+* What is this "uncertainty" thing you keep talking about? 
+
+]
+
+]
+
+&lt;br&gt;
+
+Both are subject to the [Garden of Forking Paths](http://www.stat.columbia.edu/~gelman/research/unpublished/p_hacking.pdf) and p-hacking.
+
+
+---
+
+# How the model is validated in practice
+
+
+.pull-left[
+Inferential Models:
+
+* Checking assumptions (e.g., residual analysis, EDA)
+
+* Goodness of fit tests, overall ANOVA analysis, etc. 
+
+* [Debatable] Conduct model selection until there are no insignificant predictors.
+
+* With- and without-outlier re-analysis. 
+
+]
+.pull-right[
+Predictive Models:
+
+* Data splitting (training/test sets) 
+
+* Resampling or validation sets during development, test set at end. 
+
+* Visualization of predictions/residuals, EDA, detective work.
+
+* Empirical assessments based on performance statistics. 
+
+]
+
+
+---
+
+# Where this _could_ go wrong
+
+IMO inferential statistics has somewhat fetishized statistical significance and disregarded accuracy-based performance metrics. 
+
+  * How many times have you seen percent accuracy been highlighted when reporting logistic regression results? 
+
+Models with low _R_&lt;sup&gt;2&lt;/sup&gt; or poor accuracy presented with the same credence as one that performs well. 
+
+If the _R_&lt;sup&gt;2&lt;/sup&gt; was 20%, does this mean that 80% of the inferences are questionable? 
+ 
+
+---
+
+# Objective functions 
+
+Another issue is that statistical significance metrics are likelihood-based. This metric may not reflect how close the predictions are to the true values 
+
+ * Except in ordinary linear regression. 
+ 
+Friedman (2001): 
+
+&gt; "degrading the likelihood by overfitting actually improves misclassification error rate. Although perhaps counterintuitive, this is not a contradiction; likelihood and error rate measure different aspects of fit quality."
+
+I'm not arguing that statistical significance be thrown away in favor of accuracy measures. I think that the latter must qualify the former. 
+
+There should be some proof that the model's results have some degree of fidelity to the data. QQ-plots on residuals aren't enough. 
+
+---
+
+# What's so great about predictive/ML models?
+
+Probably the best thing that ML models have going for them is the focus on empirical validation. 
+
+This usually involves computing performance on out-of-sample data.
+
+ * Never naively re-predict the data use to build the model
+ 
+ * For the training set, the re-predicted data contain favorable biases. 
+
+ * These biases grow as the model becomes more complex. 
+ 
+To paraphrase Fury (2014) "[empirical validation] takes the world as it is, not as we'd like it to be." 
+
+
+---
+
+# Resampling
+
+The best tool for empirical validation is _resampling_. 
+
+It iteratively separates the data into two partitions; one is used for modeling and another to measure performance. 
+
+Without throwing away data, it does the best job of finding performance estimates (of anything) that generalize to the sample population. 
+
+Examples are cross-validation, the bootstrap, rolling forecast origin resampling, and others. 
+
+ * These mostly differ in how the data are partitioned. 
+
+The next slide has a general schematic for resampling; however, for inferential models, a test set probably is not needed. 
+
+---
+
+# Resampling
+
+&lt;img src="images/resampling.svg" width="70%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Example: orthodontic measurement
+
+Data are from Potthoff and Roy (1964) and are used by just about everyone:
+
+&gt; Investigators at the University of North Carolina Dental School followed the growth of 27 children (16 males, 11 females) from age 8 until age 14. Every two years they measured the distance between the pituitary and the pterygomaxillary fissure, two points that are easily identified on x-ray exposures of the side of the head.
+
+We are modeling a subject's distances as a function of the age and gender. 
+
+(data are in the `nlme` package)
+
+---
+
+# The 27 subjects
+
+&lt;img src="Max_Kuhn_files/figure-html/orth-plot-1.svg" width="90%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Modeling Strategy
+
+A linear model for `age` with subject-specific slopes and intercepts seems reasonable for these data. 
+
+We'll fit a Bayesian hierarchical model with: 
+
+ * t(1) priors or regression coefficients, 
+ * Gaussian errors with a prior of expo(1) for `\(\sigma\)`, 
+ * 8 chains with 2000 iterations/chain.
+
+I fit the models using Stan via R. 
+
+We'll look at models with random slopes, random intercepts, and both as random. 
+
+Sex will be used as a fixed effect. 
+
+.code90[
+
+```r
+both_param  =  age * Sex + (  age   | Subject)
+slopes_only =  age * Sex + (0 + age | Subject)
+int_only    =  age * Sex + (  1     | Subject)
+```
+
+]
+
+
+
+
+
+---
+
+# Initial assessments of performance
+
+.pull-left[
+
+AIC values for each model:
+
+&lt;table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; Random &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; wAIC &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Intercepts &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 409.096 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Slopes &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 411.582 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Slopes and Intercepts &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 411.176 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+Posterior statistics for `\(\sigma\)`
+
+&lt;table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; Random &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 10% &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; median &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; 90% &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Intercepts Only &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.270 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.401 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.556 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Slopes and Intercepts &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.272 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.407 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.568 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Slopes Only &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.288 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.421 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1.574 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+
+]
+.pull-right[
+
+Posterior distributions for `\(\sigma\)`: 
+
+&lt;img src="Max_Kuhn_files/figure-html/sigma-1.svg" width="90%" style="display: block; margin: auto;" /&gt;
+
+]
+
+
+---
+
+# "In-sample" predictions
+
+&lt;img src="Max_Kuhn_files/figure-html/orth-in-sample-1.svg" width="80%" style="display: block; margin: auto;" /&gt;
+
+These are from re-predicting the same data used to build the model. 
+
+
+
+
+---
+
+# Resampling
+
+For these data, the most natural resampling method is _leave-subject-out cross-validation_. 
+
+ * For 27 iterations, one subject is withheld and the model is fit using the other subjects. 
+ 
+ * For each subject, RMSE and _R_&lt;sup&gt;2&lt;/sup&gt; are computed on their predictions. 
+ 
+The resampling estimate is the average of the 27 assessment set statistics. 
+
+Recall that, for multi-level models, a new subject would be predicted using the the posterior mode estimates of the regression parameters. 
+
+ * Since no other subject-specific covariates are in this model, the same predicted values are used for all _new_ subjects being exposed to the model. 
+ 
+How do the resampled estimates compare to the posterior distribution?  
+
+
+---
+
+# Posterior predictions for new samples
+
+&lt;img src="Max_Kuhn_files/figure-html/random-effects-1.svg" width="50%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# RMSE estimates for random slopes and intercepts
+
+&lt;img src="Max_Kuhn_files/figure-html/rmse-1.svg" width="60%" style="display: block; margin: auto;" /&gt;
+
+(black is previous posterior, black are resampling results, vertical line is resampling estimate)
+
+---
+
+# Out-of-sample predictions
+
+&lt;img src="Max_Kuhn_files/figure-html/orth-plot-oos-1.svg" width="80%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Both sets of predictions (gray = in-sample)
+
+&lt;img src="Max_Kuhn_files/figure-html/orth-plot-both-1.svg" width="80%" style="display: block; margin: auto;" /&gt;
+
+(grey is in-sample model predictions)
+
+---
+
+# Which RMSE estimate do we believe? 
+
+This demonstrates that within-sample statistics may give us optimistic assessments of performance. 
+
+ * Without resampling, each sample's profile is estimated with shrunken slopes and intercepts. 
+
+ * With resampling, the estimates are integrated over subjects. 
+
+Since subject is a _random effect_, there is the notation that we want our inferences to be generalizable to the population of subjects 
+
+ * As opposed to having inferences that are specific to _these particular_ subjects (i.e. as a _fixed effect_). 
+
+From this point of view, the poor performance is the more realistic estimate of the model RMSE.  
+
+If there were subject-specific covariates, this might have turned out better. 
+
+
+---
+
+# Model selection results
+
+&lt;img src="Max_Kuhn_files/figure-html/model-differences-oos-1.svg" width="50%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Comparing models using resampling
+
+Since we have _matched_ resampling statistics across models and resamples, these can be used as the _data_ in an ANOVA model. 
+
+From this model, formal inferences can be made regarding differences in model metrics (e.g. R&lt;sup&gt;2&lt;/sup&gt;, etc). 
+
+One issue is that there is typically a strong within-resample correlation (usually &gt; 0.5). 
+
+A hierarchical model can be used to model this variance effect. 
+
+This idea is based off of the ideas in Hothorn _et al_ (2005),  Eugster _et al_ (2006), and Benavoli _et al_ (2017). 
+
+Software to automate this is in the `tidyposterior` package. 
+
+
+---
+
+# A reasonable hierarchical model
+
+Having looked at a lot of these types of results, a random intercept model seems most appropriate: 
+
+`$$y_{ij} = (\beta_0 + b_{i}) + \beta_1x_{i1} + \ldots + \beta_px_{ip} + \epsilon_{ij}$$`
+
+where `\(i\)` is over _resamples_, `\(j\)` is over _models_ and the outcome data are the performance statistics. 
+
+The Central Limit Theorem tends to kick in fairly quickly; normality for `\(\epsilon\)` can often work. In other cases, a transformation for the `\(y_{ij}\)` can stabilize the variance. 
+
+From this model, posteriors for differences in performance ( `\(\delta_{jj'} = \beta_j - \beta_{j'}\)` ) can be computed and visualized.  
+
+
+
+---
+
+# Posterior distribution for RMSE values
+
+.pull-left[
+&lt;img src="Max_Kuhn_files/figure-html/tp-post-sigma-1.svg" width="100%" style="display: block; margin: auto;" /&gt;
+]
+.pull-right[
+
+From this analysis, the resample-to-resample variation was 99.9%  of the total variance. 
+
+]
+
+
+
+---
+
+# Posterior distribution for RMSE differences
+
+.pull-left[
+&lt;img src="Max_Kuhn_files/figure-html/diff-post-sigma-1.svg" width="100%" style="display: block; margin: auto;" /&gt;
+]
+.pull-right[
+There is a 50% probability that the slope only model is better. 
+
+The size of the difference, -0.00003961, is not practically important. 
+
+ * This can be quantified better using Regions of Practical Equivalence (ROPE) estimates. 
+ 
+These results aren't surprising since the subject-specific slope and intercept estimates are highly correlated.  
+]
+
+
+
+
+
+---
+
+# Thanks
+
+Slides and code are at: [`https://github.com/topepo/2020-CT-ASA`](https://github.com/topepo/2020-CT-ASA)
+
+
+.font70[
+
+References: 
+
+[Bates, D. _et al_](https://www.jstatsoft.org/article/view/v067i01)  "Fitting Linear Mixed-Effects Models Using `lme4`" _Journal of Statistical Software_, 67(1), 1-48
+
+Eugster, M. J. A., Hothorn, T., and Leisch, F. "Domain-Based Benchmark Experiments: Exploratory and Inferential Analysis". _Austrian Journal of Statistics_, 41(1), 2016, 5–26
+
+[Friedman, J. H.](https://projecteuclid.org/euclid.aos/1013203451) "Greedy Function Approximation: A Gradient Boosting Machine." _The Annals of Statistics_, vol. 29, no. 5, 2001, pp. 1189–1232. 
+
+Fury, N. J. [_The Winter Soldier_](https://en.wikipedia.org/wiki/Captain_America:_The_Winter_Soldier), 2014. 
+
+Hothorn, T., Leisch, F., Zeileis, A. and Hornik, K. "The Design and Analysis of Benchmark Experiments" _Journal of Computational and Graphical Statistics_, 14:3, 2005, 675-699
+
+[Potthoff, R. F. and Roy, S. N.](https://www.bio.umass.edu/biology/kunkel/pub/Biometry/Potthoff+Roy-Biomet1964.pdf) "A generalized multivariate analysis of variance model useful especially for growth curve problems", _Biometrika_, 51, 1964, 313–326.
+
+]
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"ratio": "16:9",
+"highlightLanguage": "R",
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();</script>
+
+<script>
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

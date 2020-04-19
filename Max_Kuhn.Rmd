@@ -1,0 +1,786 @@
+---
+title: "What Inferential Statistics Can Utilize from Predictive Models"
+author: Max Kuhn <br><br> RStudio PBC <br> max@rstudio.com <br> @topepos
+output:
+  xaringan::moon_reader:
+    css: ["mtheme_max.css", "fonts_mtheme_max.css"]  
+    self_contained: false
+    lib_dir: libs
+    nature:
+      ratio: '16:9'
+      highlightLanguage: R
+      countIncrementalSlides: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r knitr, include = FALSE}
+library(knitr)
+opts_chunk$set(digits = 3)
+# devtools::install_github("tidymodels/parsnip@glmer")
+library(nlme)
+library(lme4)
+library(rstanarm)
+library(tidybayes)
+library(kableExtra)
+library(tidymodels)
+library(tidyposterior)
+library(tidyr)
+library(doMC)
+registerDoMC(cores = 10)
+
+thm <- theme_bw() + 
+  theme(
+    panel.background = element_rect(fill = "transparent", colour = NA), 
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    legend.position = "top",
+    legend.background = element_rect(fill = "transparent", colour = NA),
+    legend.key = element_rect(fill = "transparent", colour = NA)
+  )
+theme_set(thm)
+
+Orthodont <- as_tibble(Orthodont)
+Orthodont$Subject <- as.character(Orthodont$Subject)
+Orthodont$Sex <- as.character(Orthodont$Sex)
+
+model_cols <- 
+  c("Intercepts Only" = "#1B9E77",
+    "Slopes and Intercepts" = "#D95F02",
+    "Slopes Only" = "#7570B3")
+
+```
+
+
+# Goals for different types of models
+
+.font120[
+**Inferential models** are meant to produce explainable parameters of interested that can be quantified and compared statistically. The end goal is to make conclusions. 
+
+**Predictive models** are created to produce predictions on new samples that are as close as possible to the actual values. Explainability is nice but secondary; the end goal is to estimate something accurately.  
+]
+
+The latter also goes by titles such as machine learning, AI, or pattern recognition.
+
+---
+
+# What we care about
+
+.pull-left[
+Inferential Models:
+
+.font80[
+
+* Dogmatic regarding probabilistic distributions.
+
+* Bias towards explainable models (i.e., low-complexity).
+
+  * Tend to be high bias/low variance models.
+
+* Focus on likelihood-based statistics.
+
+* Elimination of non-significant model terms. 
+
+* Many different sub-models if the same type considered. 
+
+* Uncertainty estimates
+
+]
+
+]
+.pull-right[
+Predictive Models:
+
+.font80[
+
+* Distribution ignorant (typically).
+
+* Pro-complexity.
+
+   * Variance and bias levels vary; stereotypically high variance/low bias. 
+
+* Focus on accuracy-oriented metrics or business metrics (e.g., expected monetary loss).
+
+* Feature selection and engineering are important. 
+
+* Many different types of models considered. 
+
+* What is this "uncertainty" thing you keep talking about? 
+
+]
+
+]
+
+<br>
+
+Both are subject to the [Garden of Forking Paths](http://www.stat.columbia.edu/~gelman/research/unpublished/p_hacking.pdf) and p-hacking.
+
+
+---
+
+# How the model is validated in practice
+
+
+.pull-left[
+Inferential Models:
+
+* Checking assumptions (e.g., residual analysis, EDA)
+
+* Goodness of fit tests, overall ANOVA analysis, etc. 
+
+* [Debatable] Conduct model selection until there are no insignificant predictors.
+
+* With- and without-outlier re-analysis. 
+
+]
+.pull-right[
+Predictive Models:
+
+* Data splitting (training/test sets) 
+
+* Resampling or validation sets during development, test set at end. 
+
+* Visualization of predictions/residuals, EDA, detective work.
+
+* Empirical assessments based on performance statistics. 
+
+]
+
+
+---
+
+# Where this _could_ go wrong
+
+IMO inferential statistics has somewhat fetishized statistical significance and disregarded accuracy-based performance metrics. 
+
+  * How many times have you seen percent accuracy been highlighted when reporting logistic regression results? 
+
+Models with low _R_<sup>2</sup> or poor accuracy presented with the same credence as one that performs well. 
+
+If the _R_<sup>2</sup> was 20%, does this mean that 80% of the inferences are questionable? 
+ 
+
+---
+
+# Objective functions 
+
+Another issue is that statistical significance metrics are likelihood-based. This metric may not reflect how close the predictions are to the true values 
+
+ * Except in ordinary linear regression. 
+ 
+Friedman (2001): 
+
+> "degrading the likelihood by overfitting actually improves misclassification error rate. Although perhaps counterintuitive, this is not a contradiction; likelihood and error rate measure different aspects of fit quality."
+
+I'm not arguing that statistical significance be thrown away in favor of accuracy measures. I think that the latter must qualify the former. 
+
+There should be some proof that the model's results have some degree of fidelity to the data. QQ-plots on residuals aren't enough. 
+
+---
+
+# What's so great about predictive/ML models?
+
+Probably the best thing that ML models have going for them is the focus on empirical validation. 
+
+This usually involves computing performance on out-of-sample data.
+
+ * Never naively re-predict the data use to build the model
+ 
+ * For the training set, the re-predicted data contain favorable biases. 
+
+ * These biases grow as the model becomes more complex. 
+ 
+To paraphrase Fury (2014) "[empirical validation] takes the world as it is, not as we'd like it to be." 
+
+
+---
+
+# Resampling
+
+The best tool for empirical validation is _resampling_. 
+
+It iteratively separates the data into two partitions; one is used for modeling and another to measure performance. 
+
+Without throwing away data, it does the best job of finding performance estimates (of anything) that generalize to the sample population. 
+
+Examples are cross-validation, the bootstrap, rolling forecast origin resampling, and others. 
+
+ * These mostly differ in how the data are partitioned. 
+
+The next slide has a general schematic for resampling; however, for inferential models, a test set probably is not needed. 
+
+---
+
+# Resampling
+
+```{r rs, echo = FALSE, results = 'asis', out.width = "70%", fig.align='center'}
+knitr::include_graphics("images/resampling.svg")
+```
+
+
+---
+
+# Example: orthodontic measurement
+
+Data are from Potthoff and Roy (1964) and are used by just about everyone:
+
+> Investigators at the University of North Carolina Dental School followed the growth of 27 children (16 males, 11 females) from age 8 until age 14. Every two years they measured the distance between the pituitary and the pterygomaxillary fissure, two points that are easily identified on x-ray exposures of the side of the head.
+
+We are modeling a subject's distances as a function of the age and gender. 
+
+(data are in the `nlme` package)
+
+---
+
+# The 27 subjects
+
+```{r orth-plot, echo = FALSE, out.width = "90%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 10, fig.height = 5.5}
+ggplot(Orthodont, aes(x = age, y = distance, col = Sex)) + 
+  geom_point(alpha = .7) + 
+  facet_wrap(~ Subject) + 
+  scale_color_brewer(palette = "Set1")
+```
+
+
+---
+
+# Modeling Strategy
+
+A linear model for `age` with subject-specific slopes and intercepts seems reasonable for these data. 
+
+We'll fit a Bayesian hierarchical model with: 
+
+ * t(1) priors or regression coefficients, 
+ * Gaussian errors with a prior of expo(1) for $\sigma$, 
+ * 8 chains with 2000 iterations/chain.
+
+I fit the models using Stan via R. 
+
+We'll look at models with random slopes, random intercepts, and both as random. 
+
+Sex will be used as a fixed effect. 
+
+.code90[
+
+```r
+both_param  =  age * Sex + (  age   | Subject)
+slopes_only =  age * Sex + (0 + age | Subject)
+int_only    =  age * Sex + (  1     | Subject)
+```
+
+]
+
+```{r stan-orth, include = FALSE, cache = TRUE}
+# This engine will probably go into another package (instead of parsnip) and
+# The engine name might change too. 
+long_mod <- 
+  linear_reg() %>% 
+  set_engine("stan glmer", prior = student_t(1), chains = 8, cores = 8)
+
+# This won't be needed in the future. See 
+orth_rec <- recipe(distance ~ age + Sex + Subject,  data = Orthodont) %>% 
+  step_novel(Subject)
+
+# ------------------------------------------------------------------------------
+
+rand_int_slope_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~ age * Sex + (age | Subject)) %>% 
+  add_recipe(orth_rec)
+
+rand_slope_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~  age * Sex + (0 + age | Subject)) %>% 
+  add_recipe(orth_rec)
+
+rand_int_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~  age * Sex + (1 | Subject)) %>% 
+  add_recipe(orth_rec)
+
+# ------------------------------------------------------------------------------
+
+set.seed(2416)
+rand_int_slope_fit <- fit(rand_int_slope_wflow, data = Orthodont)
+
+set.seed(2416)
+rand_int_fit <- fit(rand_int_wflow, data = Orthodont)
+
+set.seed(2416)
+rand_slope_fit <- fit(rand_slope_wflow, data = Orthodont)
+```
+
+```{r other-objects, include = FALSE}
+
+rand_int_slope_waic <- 
+  rand_int_slope_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  waic() %>% 
+  pluck("waic")
+
+rand_int_waic <- 
+  rand_int_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  waic() %>% 
+  pluck("waic")
+
+set.seed(1353)
+rand_slope_waic <- 
+  rand_slope_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  waic() %>% 
+  pluck("waic")
+
+wiac_vals <- 
+  tibble(
+    Random = c("Slopes and Intercepts", "Intercepts", "Slopes"),
+    wAIC = c(rand_int_slope_waic, rand_int_waic, rand_slope_waic)
+  ) %>% 
+  arrange(wAIC)
+
+# ------------------------------------------------------------------------------
+
+set.seed(6868)
+rand_int_slope_sd <- 
+  rand_int_slope_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  spread_draws(sigma) %>% 
+  mutate(Random = "Slopes and Intercepts")
+
+set.seed(6497)
+rand_int_sd <- 
+  rand_int_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  spread_draws(sigma) %>% 
+  mutate(Random = "Intercepts Only")
+
+set.seed(1353)
+rand_slope_sd <- 
+  rand_slope_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  spread_draws(sigma) %>% 
+  mutate(Random = "Slopes Only")
+
+# ------------------------------------------------------------------------------
+
+error_post <- 
+  bind_rows(rand_int_sd, rand_int_slope_sd, rand_slope_sd)
+```
+
+---
+
+# Initial assessments of performance
+
+.pull-left[
+
+AIC values for each model:
+
+```{r waic, echo = FALSE, results = 'asis'}
+wiac_vals %>% 
+  arrange(Random) %>% 
+  kable(digits = 3) %>% 
+  kable_styling(full_width = FALSE)
+```
+
+Posterior statistics for $\sigma$
+
+```{r post-med, echo = FALSE, results = 'asis'}
+error_post %>% 
+  group_by(Random) %>% 
+  summarize(
+    `10%` = quantile(sigma, prob = .1),
+    median = median(sigma),
+    `90%` = quantile(sigma, prob = .9)
+  )  %>% 
+  kable(digits = 3) %>% 
+  kable_styling(full_width = FALSE)
+```
+
+
+]
+.pull-right[
+
+Posterior distributions for $\sigma$: 
+
+```{r sigma, echo = FALSE, out.width = "90%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
+error_post %>%
+  ggplot(aes(x = sigma, fill = Random)) +
+  geom_histogram(bins = 50, alpha = .6, col = "#FAFAFA") + 
+  facet_wrap(~ Random, ncol = 1) +
+  xlab(expression(sigma)) + 
+  scale_fill_manual(values = model_cols)
+```
+
+]
+
+
+---
+
+# "In-sample" predictions
+
+```{r orth-in-sample, echo = FALSE, out.width = "80%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 10, fig.height = 5.5}
+in_sample_pred <- predict(rand_int_slope_fit, Orthodont) %>% select(.in_sample = .pred)
+
+Orthodont %>% 
+  mutate(.row = row_number()) %>% 
+  bind_cols(in_sample_pred) %>% 
+  ggplot(aes(x = age, y = distance, col = Sex)) + 
+  geom_point(alpha = .5) +
+  geom_path(aes(y = .in_sample)) +
+  facet_wrap(~ Subject) + 
+  scale_color_brewer(palette = "Set1")
+```
+
+These are from re-predicting the same data used to build the model. 
+
+
+```{r resampled, include = FALSE, cache = TRUE}
+# Redefine the model and workflows to get rid of the cores option. 
+
+long_mod <- 
+  linear_reg() %>% 
+  set_engine("stan glmer", prior = student_t(1), chains = 8, cores = 1)
+
+rand_int_slope_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~ age*Sex + (age | Subject)) %>% 
+  add_recipe(orth_rec)
+
+rand_slope_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~ age*Sex + (0 + age | Subject)) %>% 
+  add_recipe(orth_rec)
+
+rand_int_wflow <- 
+  workflow() %>% 
+  add_model(long_mod, formula = distance ~ age*Sex + (1 | Subject)) %>% 
+  add_recipe(orth_rec)
+
+
+library(doMC)
+registerDoMC(cores = 20)
+
+ctrl <- control_resamples(save_pred = TRUE)
+leave_subject_out <- group_vfold_cv(Orthodont, group = "Subject")
+
+set.seed(8962)
+rand_int_slope_rs <- 
+  rand_int_slope_wflow %>% 
+  fit_resamples(resamples = leave_subject_out, control = ctrl)
+
+set.seed(8962)
+rand_int_rs <- 
+  rand_int_wflow %>% 
+  fit_resamples(resamples = leave_subject_out, control = ctrl)
+
+set.seed(8962)
+rand_slope_rs <- 
+  rand_slope_wflow %>% 
+  fit_resamples(resamples = leave_subject_out, control = ctrl)
+
+rand_int_slope_rmse <- 
+  collect_metrics(rand_int_slope_rs, summarize = FALSE) %>% 
+  filter(.metric == "rmse")
+rand_int_rmse <- 
+  collect_metrics(rand_int_rs, summarize = FALSE) %>% 
+  filter(.metric == "rmse")
+rand_slope_rmse <- 
+  collect_metrics(rand_slope_rs, summarize = FALSE) %>% 
+  filter(.metric == "rmse")
+
+
+rmse_oos <- 
+  leave_subject_out %>% 
+  bind_cols(
+    rand_int_slope_rmse %>% 
+      select(id, slope_int = .estimate) %>% 
+      full_join(rand_int_rmse %>% select(id, int = .estimate), by = "id") %>% 
+      full_join(rand_slope_rmse %>% select(id, slope = .estimate), by = "id") %>% 
+      select(-id)
+  )
+```
+
+---
+
+# Resampling
+
+For these data, the most natural resampling method is _leave-subject-out cross-validation_. 
+
+ * For 27 iterations, one subject is withheld and the model is fit using the other subjects. 
+ 
+ * For each subject, RMSE and _R_<sup>2</sup> are computed on their predictions. 
+ 
+The resampling estimate is the average of the 27 assessment set statistics. 
+
+Recall that, for multi-level models, a new subject would be predicted using the the posterior mode estimates of the regression parameters. 
+
+ * Since no other subject-specific covariates are in this model, the same predicted values are used for all _new_ subjects being exposed to the model. 
+ 
+How do the resampled estimates compare to the posterior distribution?  
+
+
+---
+
+# Posterior predictions for new samples
+
+```{r random-effects, echo = FALSE, out.width = "50%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 4, fig.height = 4}
+subject_spec_param <- 
+  rand_int_slope_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit") %>% 
+  spread_draws(b[i, v]) %>% 
+  group_by(i, v) %>% 
+  summarize(median = median(b)) %>% 
+  pivot_wider(id_cols = "v", names_from = "i", values_from = "median") 
+
+mean_param <- 
+  subject_spec_param %>% 
+  summarize(
+    `(Intercept)` = median(`(Intercept)`),
+    age = median(age)
+  )
+  
+
+subject_spec_param %>% 
+  ggplot(aes(x = `(Intercept)`, y = age)) + 
+  geom_point(alpha = .3) + 
+  geom_point(data = mean_param, col = "blue", cex = 2) + 
+  geom_vline(xintercept = mean_param$`(Intercept)`, col = "blue", lty = 3) + 
+  geom_hline(yintercept = mean_param$age, col = "blue", lty = 3) +
+  coord_equal(ratio = 1/2)
+```
+
+
+---
+
+# RMSE estimates for random slopes and intercepts
+
+```{r rmse, echo = FALSE, out.width = "60%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 6, fig.height = 4}
+rand_int_slope_sd %>% 
+  ggplot(aes(x = sigma)) + 
+  geom_line(stat = "density", trim = TRUE, col = model_cols["Slopes and Intercepts"]) +
+  geom_rug(data = rand_int_slope_rmse, aes(x = .estimate)) + 
+  geom_vline(xintercept = mean(rand_int_slope_rmse$.estimate), lty = 2) + 
+  xlab(expression(sigma))
+```
+
+(black is previous posterior, black are resampling results, vertical line is resampling estimate)
+
+---
+
+# Out-of-sample predictions
+
+```{r orth-plot-oos, echo = FALSE, out.width = "80%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 10, fig.height = 5.5}
+in_sample_pred <- predict(rand_int_slope_fit, Orthodont) %>% select(.in_sample = .pred)
+
+Orthodont %>% 
+  mutate(.row = row_number()) %>% 
+  bind_cols(in_sample_pred) %>% 
+  select(-distance) %>% 
+  full_join(collect_predictions(rand_int_slope_rs), by = ".row") %>% 
+  ggplot(aes(x = age, y = distance, col = Sex)) + 
+  geom_point(alpha = .5) +
+  geom_path(aes(y = .pred)) +
+  facet_wrap(~ Subject) + 
+  scale_color_brewer(palette = "Set1")
+```
+
+
+---
+
+# Both sets of predictions (gray = in-sample)
+
+```{r orth-plot-both, echo = FALSE, out.width = "80%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width = 10, fig.height = 5.5}
+in_sample_pred <- predict(rand_int_slope_fit, Orthodont) %>% select(.in_sample = .pred)
+
+Orthodont %>% 
+  mutate(.row = row_number()) %>% 
+  bind_cols(in_sample_pred) %>% 
+  select(-distance) %>% 
+  full_join(collect_predictions(rand_int_slope_rs), by = ".row") %>% 
+  ggplot(aes(x = age, y = distance, col = Sex)) + 
+  geom_point(alpha = .5) +
+  geom_path(aes(y = .pred)) + 
+  geom_path(aes(y = .in_sample), col = "black", alpha = .5, lty = 2) +
+  facet_wrap(~ Subject) + 
+  scale_color_brewer(palette = "Set1")
+```
+
+(grey is in-sample model predictions)
+
+---
+
+# Which RMSE estimate do we believe? 
+
+This demonstrates that within-sample statistics may give us optimistic assessments of performance. 
+
+ * Without resampling, each sample's profile is estimated with shrunken slopes and intercepts. 
+
+ * With resampling, the estimates are integrated over subjects. 
+
+Since subject is a _random effect_, there is the notation that we want our inferences to be generalizable to the population of subjects 
+
+ * As opposed to having inferences that are specific to _these particular_ subjects (i.e. as a _fixed effect_). 
+
+From this point of view, the poor performance is the more realistic estimate of the model RMSE.  
+
+If there were subject-specific covariates, this might have turned out better. 
+
+
+---
+
+# Model selection results
+
+```{r model-differences-oos, echo = FALSE, out.width = "50%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), fig.width=6, fig.height=4.25}
+rmse_oos %>% 
+  select(-splits) %>% 
+  pivot_longer(cols = c(-id), names_to = "model", values_to = "RMSE") %>% 
+  mutate(Random = 
+           case_when(
+             model == "slope_int" ~ "Slopes and Intercepts",
+             model == "slope" ~ "Slopes Only",
+             TRUE ~ "Intercepts Only"
+           )) %>% 
+  ggplot(aes(y = RMSE, x = reorder(Random, RMSE), group = id, col = id)) + 
+  geom_line(alpha = .5, lwd = .5) + 
+  theme(legend.position = "none") + 
+  xlab("\nRandom Effects")
+```
+
+
+---
+
+# Comparing models using resampling
+
+Since we have _matched_ resampling statistics across models and resamples, these can be used as the _data_ in an ANOVA model. 
+
+From this model, formal inferences can be made regarding differences in model metrics (e.g. R<sup>2</sup>, etc). 
+
+One issue is that there is typically a strong within-resample correlation (usually > 0.5). 
+
+A hierarchical model can be used to model this variance effect. 
+
+This idea is based off of the ideas in Hothorn _et al_ (2005),  Eugster _et al_ (2006), and Benavoli _et al_ (2017). 
+
+Software to automate this is in the `tidyposterior` package. 
+
+
+---
+
+# A reasonable hierarchical model
+
+Having looked at a lot of these types of results, a random intercept model seems most appropriate: 
+
+$$y_{ij} = (\beta_0 + b_{i}) + \beta_1x_{i1} + \ldots + \beta_px_{ip} + \epsilon_{ij}$$
+
+where $i$ is over _resamples_, $j$ is over _models_ and the outcome data are the performance statistics. 
+
+The Central Limit Theorem tends to kick in fairly quickly; normality for $\epsilon$ can often work. In other cases, a transformation for the $y_{ij}$ can stabilize the variance. 
+
+From this model, posteriors for differences in performance ( $\delta_{jj'} = \beta_j - \beta_{j'}$ ) can be computed and visualized.  
+
+```{r perf-mod, include = FALSE}
+rmse_mod <-
+  perf_mod(
+    rmse_oos,
+    refresh = 0,
+    chains = 8,
+    cores = 8,,
+    seed = 4072
+  )
+sd_est <- 
+  rmse_mod$stan %>% 
+  VarCorr() %>% 
+  as_tibble()
+
+resample_cor <- sd_est$vcov[sd_est$grp == "id"]/sum(sd_est$vcov)
+```
+
+---
+
+# Posterior distribution for RMSE values
+
+.pull-left[
+```{r tp-post-sigma, echo = FALSE, out.width = "100%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
+rmse_mod %>% 
+  tidy() %>% 
+  as_tibble()  %>% 
+  mutate(Random = 
+           case_when(
+             model == "slope_int" ~ "Slopes and Intercepts",
+             model == "slope" ~ "Slopes Only",
+             TRUE ~ "Intercepts Only"
+           )) %>% 
+  ggplot(aes(x = posterior, fill = Random)) + 
+  geom_histogram(bins = 30, alpha = .6, col = "#FAFAFA") + 
+  facet_wrap(~ Random, ncol = 1) +
+  xlab("RMSE") + 
+  scale_fill_manual(values = model_cols)
+```
+]
+.pull-right[
+
+From this analysis, the resample-to-resample variation was `r round(resample_cor*100, 1)`%  of the total variance. 
+
+]
+
+
+
+---
+
+# Posterior distribution for RMSE differences
+
+.pull-left[
+```{r diff-post-sigma, echo = FALSE, out.width = "100%", fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
+diff_res <- contrast_models(rmse_mod, "slope", "slope_int")
+diff_res %>% 
+  as_tibble() %>% 
+  ggplot(aes(x = difference)) + 
+  geom_vline(xintercept = 0, col = "green", lty = 3) + 
+  geom_histogram(col = "#FAFAFA", bins = 30) + 
+  xlab("Difference in RMSE ([s] - [s+i])")
+```
+]
+.pull-right[
+There is a `r round((1 - summary(diff_res)$probability) * 100, 0)`% probability that the slope only model is better. 
+
+The size of the difference, `r format(median(diff_res$difference), digits = 5, scientific = FALSE)`, is not practically important. 
+
+ * This can be quantified better using Regions of Practical Equivalence (ROPE) estimates. 
+ 
+These results aren't surprising since the subject-specific slope and intercept estimates are highly correlated.  
+]
+
+
+
+
+
+---
+
+# Thanks
+
+Slides and code are at: [`https://github.com/topepo/2020-CT-ASA`](https://github.com/topepo/2020-CT-ASA)
+
+
+.font70[
+
+References: 
+
+[Bates, D. _et al_](https://www.jstatsoft.org/article/view/v067i01)  "Fitting Linear Mixed-Effects Models Using `lme4`" _Journal of Statistical Software_, 67(1), 1-48
+
+Eugster, M. J. A., Hothorn, T., and Leisch, F. "Domain-Based Benchmark Experiments: Exploratory and Inferential Analysis". _Austrian Journal of Statistics_, 41(1), 2016, 5–26
+
+[Friedman, J. H.](https://projecteuclid.org/euclid.aos/1013203451) "Greedy Function Approximation: A Gradient Boosting Machine." _The Annals of Statistics_, vol. 29, no. 5, 2001, pp. 1189–1232. 
+
+Fury, N. J. [_The Winter Soldier_](https://en.wikipedia.org/wiki/Captain_America:_The_Winter_Soldier), 2014. 
+
+Hothorn, T., Leisch, F., Zeileis, A. and Hornik, K. "The Design and Analysis of Benchmark Experiments" _Journal of Computational and Graphical Statistics_, 14:3, 2005, 675-699
+
+[Potthoff, R. F. and Roy, S. N.](https://www.bio.umass.edu/biology/kunkel/pub/Biometry/Potthoff+Roy-Biomet1964.pdf) "A generalized multivariate analysis of variance model useful especially for growth curve problems", _Biometrika_, 51, 1964, 313–326.
+
+]
